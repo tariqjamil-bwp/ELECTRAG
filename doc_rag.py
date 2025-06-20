@@ -8,30 +8,30 @@ import concurrent.futures
 import re
 from tqdm import tqdm # Keep tqdm for console progress
 from datetime import datetime
+import json # Keep json import as it's used in this file
 
 # Import components and helpers from doc_processing
 from doc_processing import (
     DocLoader,
-    DocEmbedder,
-    DocRetriever,
-    # Moved persistence constants/helpers to utils
+    DocEmbedder, # Used by ManagerRAG
+    DocRetriever, # Used by ManagerRAG
 )
 
 # Import utilities from utils.py
 from utils import (
-    model_manager,
-    EMBEDDING_MODEL,
-    ENC,
-    num_tokens,
-    _cleanup_cache_files, # Keep for use in ManagerRAG
-    LLM_MODELS, # Needed for ranking fallback
-    VECTORDB_DIR, # Persistence constants needed here
+    model_manager, # Manages LLM client and models
+    EMBEDDING_MODEL, # Used by DocEmbedder
+    ENC, # Tokenizer
+    num_tokens, # Tokenizer helper
+    _cleanup_cache_files, # Cache cleanup helper
+    LLM_MODELS, # Needed for ranking fallback logic
+    VECTORDB_DIR, # Persistence constants
     MANIFEST_PATH,
-    calculate_file_hash,
+    calculate_file_hash, # Persistence helpers
     load_manifest,
     save_manifest,
 )
-import json
+
 
 # --- QA Agent ---
 class DocQA:
@@ -39,7 +39,7 @@ class DocQA:
         self.logger = logging.getLogger('DocQA')
         self.logger.info("Initialized DocQA.")
 
-    # Modified answer to accept history
+    # Modified answer to accept history and pass it to the LLM prompt
     def answer(self, question: str, context: List[str], history: List[Dict]) -> str:
         self.logger.debug(f"Generating answer for question: {question[:100]}... with {len(context)} context chunks.")
         if not context:
@@ -48,7 +48,7 @@ class DocQA:
 
         try:
             context_str = '---\n'.join(context)
-            MAX_CONTEXT_TOKENS = 35000 # Adjust based on model capacity and other prompt parts
+            MAX_CONTEXT_TOKENS = 128000 # e.g., Gemini 1.5 Pro limit
             context_tokens = ENC.encode(context_str)
             if len(context_tokens) > MAX_CONTEXT_TOKENS:
                  self.logger.warning(f"Context token count ({len(context_tokens)}) exceeds MAX_CONTEXT_TOKENS ({MAX_CONTEXT_TOKENS}). Truncating context.")
@@ -56,11 +56,6 @@ class DocQA:
 
             # Format history for prompt
             history_str = ""
-            # We typically want the LLM to see the history in chronological order, ending with the last assistant turn
-            # before the current user question. The history passed here includes the current user message.
-            # Let's format all but the *last* message (the current user question) as history.
-            # The last message (current question) is already in the 'question' variable.
-            # Format history for prompt (excluding the last message which is handled separately)
             history_for_prompt = history[:-1] # Exclude the last message (current user question)
             if history_for_prompt:
                 history_str = "Chat History:\n"
@@ -85,7 +80,7 @@ class DocQA:
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}], # Sending as a single user message for simplicity
                 temperature=0.2,
-                max_tokens=500,
+                max_tokens=500, # Max tokens for the ANSWER length
             )
             answer = resp.choices[0].message.content.strip()
             self.logger.debug(f"Generated answer (snippet): {answer[:100]}...")
@@ -94,7 +89,6 @@ class DocQA:
              self.logger.error(f"Error calling API for answer generation: {type(e).__name__}: {e}", exc_info=True)
              raise # Re-raise to answer_parallel
 
-    # Modified answer_parallel to accept history and pass it to answer
     def answer_parallel(self, question: str, candidate_contexts: List[List[str]], history: List[Dict], max_retries_per_set: int = 2) -> List[str]:
         self.logger.info(f"Generating parallel answers for {len(candidate_contexts)} candidate contexts sets.")
         if not candidate_contexts:
@@ -180,7 +174,6 @@ class DocRanker:
         self.logger = logging.getLogger('DocRanker')
         self.logger.info("Initialized DocRanker.")
 
-    # Modified rank to accept history
     def rank(self, question: str, candidate_answers: List[str], candidate_contexts: List[List[str]], history: List[Dict], max_retries: int = 2) -> tuple[str, int]:
         self.logger.info(f"Ranking {len(candidate_answers)} candidate answers for question: {question[:100]}...")
         if not candidate_answers:
@@ -311,7 +304,6 @@ class DocRanker:
                     continue
 
         # --- Fallback if retries exhausted or fatal error ---
-        # This block is now correctly outside the while loop
         self.logger.error(f"Ranking failed after {max_retries+1} attempts.")
         if valid_candidates:
             self.logger.info("Returning first valid candidate answer as fallback after ranking failure.")
@@ -486,8 +478,6 @@ class ManagerRAG:
                  self.logger.error(f"Unexpected error during file loop processing for {pdf_filename}: {file_loop_e}", exc_info=True)
                  continue # Continue outer loop
 
-        # tqdm progress bar finishes automatically after the loop
-
         self.logger.info("Saving updated manifest.")
         save_manifest(MANIFEST_PATH, updated_manifest)
         self.logger.info("Manifest save complete.")
@@ -500,7 +490,6 @@ class ManagerRAG:
              self.retriever = None
 
 
-    # Modified query to accept history
     def query(self, question: str, history: List[Dict]):
         self.logger.info(f"Starting query process for question: {question[:100]}...")
         if self.retriever is None:

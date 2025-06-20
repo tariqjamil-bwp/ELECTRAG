@@ -7,7 +7,15 @@ from datetime import datetime
 from openai import OpenAI, APIStatusError, APIConnectionError, RateLimitError
 import tiktoken
 from typing import List, Dict, Optional
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
+except Exception as e:
+    print(f"Error changing directory to script location: {e}", file=sys.stderr)
+    # Continue execution, but relative paths might be wrong
+
+
 # --- Logging Configuration ---
 LOG_DIR = "log"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -25,7 +33,9 @@ logging.basicConfig(
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 
-logger = logging.getLogger('Utils') # Use 'Utils' logger
+# logger for utils module
+logger = logging.getLogger('Utils')
+
 
 # --- Model Definitions ---
 MODELS_CONFIG_FILE = "models.json"
@@ -60,8 +70,8 @@ if not LLM_MODELS:
 logger.info(f"Configured LLM base_url: {LLM_BASE_URL}")
 logger.info(f"Available LLM models: {LLM_MODELS}")
 
-# definging sentence transformer model
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+# defining sentence transformer model
+EMBEDDING_MODEL = "all-MiniLM-L6-v2" # Using Sentence Transformers model
 logger.info(f"Using embedding model: {EMBEDDING_MODEL}")
 
 # --- LLM Client and Model Manager ---
@@ -196,7 +206,8 @@ VECTORDB_DIR = "vectordb"
 MANIFEST_FILE = "manifest.json"
 MANIFEST_PATH = os.path.join(VECTORDB_DIR, MANIFEST_FILE)
 os.makedirs(VECTORDB_DIR, exist_ok=True)
-logger = logging.getLogger('Global') # Re-get logger after basicConfig potentially
+# Re-get logger after basicConfig potentially
+logger = logging.getLogger('Global')
 logger.info(f"Vector database cache directory: {VECTORDB_DIR}")
 
 

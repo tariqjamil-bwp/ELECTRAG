@@ -1,7 +1,6 @@
 import logging
 import faiss
 import numpy as np
-# Removed ollama import
 from PyPDF2 import PdfReader
 from typing import List, Dict, Optional
 import re
@@ -10,7 +9,7 @@ import os
 from tqdm import tqdm
 from datetime import datetime
 from sentence_transformers import SentenceTransformer # Import SentenceTransformer
-#import torch
+import torch
 DEVICE = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu' # Use GPU if available, otherwise CPU
 # Import utilities from utils.py
 from utils import (
@@ -102,8 +101,6 @@ class DocEmbedder:
 
         except Exception as e:
             self.logger.critical(f"Failed to initialize DocEmbedder or load model '{self.model_name}': {str(e)}", exc_info=True)
-            # Note: If using Ollama models via SentenceTransformer, ensure Ollama server is running
-            # The exception might originate from the underlying Ollama call within SentenceTransformer
             raise
 
 
@@ -117,15 +114,11 @@ class DocEmbedder:
              raise RuntimeError("DocEmbedder not initialized properly.")
 
         try:
-            # Use SentenceTransformer.encode which handles batching and progress internally
-            # tqdm wrapper is typically handled by the caller (e.g., ingest method)
-            # show_progress_bar=False prevents duplicate progress bars if tqdm is used externally
             embeddings = self.embedder.encode(
                 texts,
                 batch_size=self.batch_size,
                 show_progress_bar=False, # Control progress bar externally with tqdm or cl.Progressbar
                 convert_to_numpy=True # Ensure numpy array output
-
             )
 
             if embeddings is None or not isinstance(embeddings, np.ndarray) or embeddings.shape[0] != len(texts):
@@ -138,8 +131,6 @@ class DocEmbedder:
                  raise ValueError("Embedding dimension mismatch after encoding.")
 
             self.logger.info(f"Completed embedding generation for {len(embeddings)} texts.")
-            # Convert numpy array of numpy vectors to list of lists if needed by other parts
-            # But FAISS expects numpy, so returning numpy is efficient
             return embeddings.tolist() # Return as list of lists to match expected type hint List[List[float]]
 
         except Exception as e:
@@ -332,7 +323,6 @@ class DocRetriever:
                  if source_embedder and source_texts and source_embedder.index is not None and source_embedder.index.ntotal > 0 and k > 0:
                      try:
                          # Search the specific source's index using the source_embedder's search method
-                         # This search method expects a numpy array [embedding]
                          D, I = source_embedder.search(current_query_embedding_np, k=k)
 
                          retrieved_chunks = [source_texts[j] for j in I]
@@ -350,5 +340,3 @@ class DocRetriever:
 
         self.logger.info(f"Finished retrieving {len(all_candidate_sets)} non-empty candidate sets.")
         return all_candidate_sets
-
-# Note: _cleanup_cache_files is defined in utils.py

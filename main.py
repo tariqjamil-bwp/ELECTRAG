@@ -15,10 +15,9 @@ logger = logging.getLogger('Main')
 
 # --- Main Execution ---
 def main():
+    """Main entry point for the RAG application."""
     logger.info("Starting RAG application")
     try:
-        # LLM Client initialization is handled in utils.py and exits on failure.
-
         logger.info("Initializing ManagerRAG Orchestrator.")
         try:
              orchestrator = ManagerRAG()
@@ -30,14 +29,13 @@ def main():
 
         pdf_folder_path = "pdf"
         if not os.path.isdir(pdf_folder_path):
-            logger.critical(f"PDF folder '{pdf_folder_path}' not found. Please create this folder and add your PDF files.")
+            logger.critical(f"PDF folder '{pdf_folder_path}' not found.")
             print(f"\nError: PDF folder '{pdf_folder_path}' not found. Please create it.")
             sys.exit(1)
 
 
         logger.info(f"Starting document ingestion for PDFs in folder '{pdf_folder_path}'.")
         try:
-            # The ingestion method uses tqdm internally for console progress
             orchestrator.ingest_pdfs_from_folder(pdf_folder_path)
             logger.info("Document ingestion completed.")
         except FileNotFoundError as e:
@@ -58,8 +56,7 @@ def main():
             ]
             for i, question in enumerate(questions, 1):
                  logger.info(f"Processing question {i}/{len(questions)}: {question}")
-                 # The query method uses tqdm internally for console progress
-                 answer = orchestrator.query(question)
+                 answer = orchestrator.query(question, history=[]) # Pass an empty list for history
                  logger.info(f"Answer for question {i} (snippet): {answer[:100]}...")
                  print(f"\n--- Question {i}: {question} ---\n")
                  print(f"Answer: {answer}\n")
