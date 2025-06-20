@@ -2,9 +2,11 @@ import streamlit as st
 import logging
 import os
 import sys
-import shutil # To copy files
-import tempfile # To handle uploaded files
+import shutil
+import tempfile
 from typing import List
+# No longer need httpx or json for direct access
+
 # Import your core RAG components directly
 # Note: Importing utils here will configure logging and initialize models/clients
 import utils # This import runs code in utils.py
@@ -32,6 +34,7 @@ MAX_CHAT_MESSAGES = MAX_CHAT_TURNS * 2
 
 # --- Basic Logging for the Streamlit App ---
 # Logging is already configured in utils.py upon import
+# Get the logger for the Streamlit app process
 logger = logging.getLogger('StreamlitUI')
 
 logger.info("Streamlit UI application starting up.")
@@ -41,6 +44,7 @@ os.makedirs(DEFAULT_PDF_FOLDER_LOCAL, exist_ok=True)
 logger.info(f"Ensured local PDF folder exists at '{DEFAULT_PDF_FOLDER_LOCAL}'.")
 
 # --- Session State Initialization ---
+# Initialize session state for RAG orchestrator and chat history
 if 'rag_orchestrator' not in st.session_state:
     st.session_state.rag_orchestrator = None
 if 'messages' not in st.session_state:
@@ -51,9 +55,12 @@ if 'rag_initialized' not in st.session_state:
 
 
 # --- RAG System Initialization and Ingestion ---
+# This function will initialize the RAG orchestrator and run ingestion
+# It needs to be triggered by a button or automatically on first load
 def initialize_rag_system(pdf_folder_path: str = DEFAULT_PDF_FOLDER_LOCAL):
     logger.info("Attempting to initialize RAG system.")
     try:
+        # Initialize the RAG orchestrator
         orchestrator = ManagerRAG()
         logger.info("RAG Orchestrator initialized.")
 
@@ -84,6 +91,7 @@ def initialize_rag_system(pdf_folder_path: str = DEFAULT_PDF_FOLDER_LOCAL):
 # --- Local File Management Functions ---
 
 def list_local_pdfs(pdf_folder: str = DEFAULT_PDF_FOLDER_LOCAL) -> List[str]:
+    """Lists PDF files in the local PDF folder."""
     logger.info(f"Listing local PDF files in '{pdf_folder}'")
     if not os.path.isdir(pdf_folder):
         logger.warning(f"Local PDF folder '{pdf_folder}' not found. Creating it.")
@@ -150,7 +158,6 @@ st.sidebar.header("RAG System Management")
 if st.sidebar.button("Initialize RAG & Ingest Documents"):
     with st.spinner("Initializing RAG and ingesting documents..."):
         initialize_rag_system(DEFAULT_PDF_FOLDER_LOCAL)
-    # Optionally rerun to refresh UI based on new state
     st.rerun()
 
 
@@ -178,7 +185,7 @@ with st.sidebar.expander("Add New PDF"):
                 with st.spinner(f"Saving {uploaded_file.name} locally..."):
                     target_path = add_uploaded_pdf_to_folder(uploaded_file, DEFAULT_PDF_FOLDER_LOCAL)
                 st.success(f"Saved '{uploaded_file.name}' to '{DEFAULT_PDF_FOLDER_LOCAL}'.")
-                st.rerun() # Rerun to refresh file list
+                st.rerun()
             except Exception as e:
                 st.error(f"An error occurred while saving the file: {e}")
                 logger.error(f"Error saving uploaded file: {e}", exc_info=True)
@@ -197,9 +204,9 @@ with st.sidebar.expander("Remove Existing PDF"):
                 try:
                     with st.spinner(f"Removing {file_name_to_remove} locally..."):
                         remove_pdf_from_folder(file_name_to_remove, DEFAULT_PDF_FOLDER_LOCAL)
-                    st.rerun() # Rerun to refresh file list
+                    st.rerun()
                 except Exception as e:
-                    pass # Error handled inside remove_pdf_from_folder
+                    pass
             else:
                 st.warning("Please select a file to remove.")
     else:
@@ -209,14 +216,38 @@ with st.sidebar.expander("Remove Existing PDF"):
 # --- Main Chat Interface ---
 st.header("Chat with Documents")
 
+# Apply CSS for ample lines in chat input and potentially scrollable messages
+st.markdown(
+    """
+    <style>
+    /* Style for the chat input text area */
+    textarea[data-testid="stChatInputTextArea"] {
+        height: 100px; /* Adjust height as needed for more lines */
+    }
+
+    /* Optional: Style for message content to be scrollable if very long */
+    .stChatMessage {
+        max-height: 400px; /* Max height before scrolling */
+        overflow-y: auto;
+    }
+    .stChatMessage > div:first-child {
+        max-height: 380px; /* Adjust based on padding */
+        overflow-y: auto;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # Display chat messages from history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+
 # Chat input for user query
-# Set height using a number of lines
-prompt = st.chat_input("Ask about the documents...", key="chat_input", max_chars=None) # max_chars=None for large input
+prompt = st.chat_input("Ask about the documents...", key="chat_input", max_chars=None)
+
 
 # --- Process User Query ---
 if prompt:
@@ -226,12 +257,13 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Check and truncate message history if needed
-    # Keep the assistant message that will be added next in mind
-    if len(st.session_state.messages) >= MAX_CHAT_MESSAGES:
-        # Remove the oldest turn (user + assistant = 2 messages)
-        st.session_state.messages = st.session_state.messages[2:]
-        logger.info(f"Chat history truncated to last {MAX_CHAT_TURNS} turns.")
+    # Get the last few messages for history, INCLUDING the current user message
+    # We will pass history from the start of the list up to and including the current user message.
+    # The RAG components (QA/Ranker) are responsible for deciding how to use this history
+    # and might slice it further (e.g., exclude the last message from history for prompt formatting).
+    start_index_for_history = max(0, len(st.session_state.messages) - MAX_CHAT_MESSAGES)
+    history_for_rag = st.session_state.messages[start_index_for_history:]
+    logger.debug(f"Passing {len(history_for_rag)} messages to RAG query method for context.")
 
 
     # Get the orchestrator from session state
@@ -253,20 +285,9 @@ if prompt:
         # Process the query using the RAG orchestrator
         with st.spinner("Processing your query..."):
             try:
-                # Pass conversation history to the query method if your RAG model supports it
-                # For this RAG structure (retrieve -> QA -> rank), memory typically needs
-                # to be handled by modifying the query or prompt based on history.
-                # A simple way is to pass the last few turns to the RAG model.
-                # This requires modifying ManagerRAG.query and potentially QAAgent/DocRanker
-                # to accept and use conversation history.
-                # For now, query function only takes the current prompt.
-                # To implement actual memory in this structure, you would pass:
-                # history = st.session_state.messages[-MAX_CHAT_MESSAGES:] # Get last messages
-                # answer = orchestrator.query(prompt, history) # Modify query method
-
-                # Using the current query method signature:
-                answer = orchestrator.query(prompt)
-
+                # Pass the current prompt and the sliced history to the query method
+                # ManagerRAG.query signature needs to accept this history parameter
+                answer = orchestrator.query(prompt, history_for_rag)
 
                 st.session_state.messages.append({"role": "assistant", "content": answer})
 
@@ -279,3 +300,11 @@ if prompt:
                 st.session_state.messages.append({"role": "assistant", "content": error_message})
                 with st.chat_message("assistant"):
                     st.markdown(error_message)
+
+    # The history is now managed by slicing *before* passing it to the RAG query.
+    # The full history is kept in st.session_state.messages, including the new turn.
+    # If len(st.session_state.messages) > MAX_CHAT_MESSAGES, slicing for the *next* turn will handle truncation.
+    # No need to explicitly truncate the main st.session_state.messages list here.
+
+
+logger.info("Streamlit UI application finished execution cycle.")

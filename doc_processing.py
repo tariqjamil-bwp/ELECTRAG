@@ -1,7 +1,7 @@
 import logging
 import faiss
 import numpy as np
-import ollama
+# Removed ollama import
 from PyPDF2 import PdfReader
 from typing import List, Dict, Optional
 import re
@@ -9,12 +9,13 @@ import json
 import os
 from tqdm import tqdm
 from datetime import datetime
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+from sentence_transformers import SentenceTransformer # Import SentenceTransformer
+
 # Import utilities from utils.py
 from utils import (
     ENC,
     num_tokens,
-    EMBEDDING_MODEL,
+    EMBEDDING_MODEL, # This constant will now be used by SentenceTransformer
     VECTORDB_DIR,
     MANIFEST_PATH,
     calculate_file_hash,
@@ -89,16 +90,19 @@ class DocEmbedder:
         self.index: Optional[faiss.IndexFlatL2] = None
 
         try:
-            # Use the specified EMBEDDING_MODEL
-            dummy_embedding_response = ollama.embeddings(model=self.model_name, prompt="test")
-            if not dummy_embedding_response or 'embedding' not in dummy_embedding_response:
-                 raise ValueError("Ollama did not return a valid embedding for test.")
-            dummy_embedding = dummy_embedding_response["embedding"]
-            self.dim = len(dummy_embedding)
+            self.logger.info(f"Loading SentenceTransformer model '{self.model_name}'...")
+            # Initialize the SentenceTransformer model
+            self.embedder = SentenceTransformer(self.model_name)
+            self.logger.info(f"SentenceTransformer model '{self.model_name}' loaded.")
+
+            # Get the dimension from the loaded model
+            self.dim = self.embedder.get_sentence_embedding_dimension()
             self.logger.info(f"Embedding model '{self.model_name}' dimension is {self.dim}.")
 
         except Exception as e:
-            self.logger.critical(f"Failed to initialize DocEmbedder or get model dimension: {str(e)}", exc_info=True)
+            self.logger.critical(f"Failed to initialize DocEmbedder or load model '{self.model_name}': {str(e)}", exc_info=True)
+            # Note: If using Ollama models via SentenceTransformer, ensure Ollama server is running
+            # The exception might originate from the underlying Ollama call within SentenceTransformer
             raise
 
 
@@ -112,36 +116,30 @@ class DocEmbedder:
              raise RuntimeError("DocEmbedder not initialized properly.")
 
         try:
-            embeddings = []
-            effective_batch_size = self.batch_size
-            num_batches = (len(texts) + effective_batch_size - 1) // effective_batch_size
+            # Use SentenceTransformer.encode which handles batching and progress internally
+            # tqdm wrapper is typically handled by the caller (e.g., ingest method)
+            # show_progress_bar=False prevents duplicate progress bars if tqdm is used externally
+            embeddings = self.embedder.encode(
+                texts,
+                batch_size=self.batch_size,
+                show_progress_bar=False, # Control progress bar externally with tqdm or cl.Progressbar
+                convert_to_numpy=True # Ensure numpy array output
+            )
 
-            # Using tqdm for console progress
-            for i in tqdm(range(0, len(texts), effective_batch_size), total=num_batches, desc="Embedding texts"):
-                batch = texts[i:i + effective_batch_size]
+            if embeddings is None or not isinstance(embeddings, np.ndarray) or embeddings.shape[0] != len(texts):
+                 self.logger.warning(f"Invalid or empty embeddings returned from embedder. Expected {len(texts)}, got {embeddings.shape[0] if isinstance(embeddings, np.ndarray) else 'N/A'}.")
+                 raise ValueError("Embedder returned invalid or empty embeddings.")
 
-                try:
-                    response = ollama.embed(model=self.model_name, input=batch)
-                    batch_embeddings = response.get("embeddings")
-
-                    if not batch_embeddings or not isinstance(batch_embeddings, list) or len(batch_embeddings) != len(batch):
-                        self.logger.warning(f"Invalid or empty embeddings for batch {i//effective_batch_size + 1}.")
-                        raise ValueError(f"Ollama returned invalid or empty embeddings for batch {i//effective_batch_size + 1}")
-
-                    if batch_embeddings and len(batch_embeddings[0]) != self.dim:
-                         self.logger.error(f"Dimension mismatch for batch {i//effective_batch_size + 1}.")
-                         raise ValueError(f"Dimension mismatch for batch {i//effective_batch_size + 1}")
-
-                    embeddings.extend(batch_embeddings)
-                    self.logger.debug(f"Processed batch {i//effective_batch_size + 1} with {len(batch_embeddings)} embeddings.")
-
-                except Exception as batch_e:
-                    self.logger.error(f"Error processing embedding batch {i//effective_batch_size + 1}: {batch_e}", exc_info=True)
-                    raise
-
+            # Dimension check after encoding
+            if embeddings.shape[1] != self.dim:
+                 self.logger.error(f"Embedding dimension mismatch after encoding: expected {self.dim}, got {embeddings.shape[1]}.")
+                 raise ValueError("Embedding dimension mismatch after encoding.")
 
             self.logger.info(f"Completed embedding generation for {len(embeddings)} texts.")
-            return embeddings
+            # Convert numpy array of numpy vectors to list of lists if needed by other parts
+            # But FAISS expects numpy, so returning numpy is efficient
+            return embeddings.tolist() # Return as list of lists to match expected type hint List[List[float]]
+
         except Exception as e:
             self.logger.error(f"Error during embedding process: {str(e)}", exc_info=True)
             raise
@@ -151,17 +149,22 @@ class DocEmbedder:
         self.logger.debug(f"Embedding query: {text[:50]}...")
         if self.dim is None:
              self.logger.critical("DocEmbedder dimension not initialized.")
-             raise RuntimeError("DocEmbedder dimension not initialized properly.")
+             raise RuntimeError("DocEmbedder not initialized properly.")
         try:
-            # Use the specified EMBEDDING_MODEL
-            response = ollama.embed(model=self.model_name, input=[text])
-            embedding = response.get("embeddings", [None])[0]
-            if embedding is None or len(embedding) != self.dim:
-                 self.logger.error(f"Invalid or empty embedding returned for query. Expected dim {self.dim}, got {len(embedding) if isinstance(embedding, list) else 'N/A'}.")
-                 raise ValueError("Ollama returned invalid or empty embedding for query.")
+            # Embed a single string
+            embedding = self.embedder.encode(
+                text,
+                convert_to_numpy=True,
+                show_progress_bar=False # No progress bar for single query
+            )
+
+            if embedding is None or not isinstance(embedding, np.ndarray) or embedding.ndim != 1 or embedding.shape[0] != self.dim:
+                 self.logger.error(f"Invalid or empty embedding returned for query. Expected dim {self.dim}, got shape {embedding.shape if isinstance(embedding, np.ndarray) else 'N/A'}.")
+                 raise ValueError("Embedder returned invalid or empty embedding for query.")
 
             self.logger.debug("Query embedding generated.")
-            return embedding
+            return embedding.tolist() # Return as list of floats to match expected type hint List[float]
+
         except Exception as e:
             self.logger.error(f"Error embedding query: {e}", exc_info=True)
             raise
@@ -177,14 +180,14 @@ class DocEmbedder:
             return
 
         try:
-            # Embedding is handled by self.embed internally which uses tqdm
-            embs = self.embed(texts)
-            vecs = np.array(embs, dtype="float32")
-            if vecs.shape[1] != self.dim:
-                self.logger.error(f"Embedding dimension mismatch before adding to index: expected {self.dim}, got {vecs.shape[1]}")
+            # Embeddings are generated as numpy array by self.embed
+            embs_np = np.array(self.embed(texts), dtype="float32") # Ensure float32 numpy array
+
+            if embs_np.shape[1] != self.dim:
+                self.logger.error(f"Embedding dimension mismatch before adding to index: expected {self.dim}, got {embs_np.shape[1]}")
                 raise ValueError(f"Embedding dimension mismatch before adding to index.")
 
-            self.index.add(vecs)
+            self.index.add(embs_np)
             self.logger.info(f"Successfully added embeddings to index. Index size: {self.index.ntotal}")
         except Exception as e:
             self.logger.error(f"Failed to add embeddings to index: {str(e)}", exc_info=True)
@@ -296,6 +299,7 @@ class DocRetriever:
              return []
 
         try:
+            # Query embedding uses the main DocEmbedder instance
             base_emb = self.embedding_agent.embed_query(query)
         except Exception as e:
             self.logger.error(f"Failed to embed query for retrieval: {e}", exc_info=True)
@@ -303,16 +307,20 @@ class DocRetriever:
 
         all_candidate_sets: List[List[str]] = []
 
+        # Generate n_candidates query embeddings (base + perturbations)
         query_embeddings: List[np.ndarray] = []
         for i in range(n_candidates):
              if i == 0:
-                 query_embeddings.append(np.array(base_emb, dtype='float32'))
+                 # Use the NumPy array directly if embed_query returns numpy
+                 # embed_query returns List[float], convert to numpy array [embedding]
+                 query_embeddings.append(np.array([base_emb], dtype='float32'))
              else:
+                 # Perturb the base embedding (assumed base_emb is list of floats from embed_query)
                  perturbed_emb = np.array(base_emb, dtype='float32') + np.random.normal(0, 0.01, len(base_emb)).astype('float32')
-                 query_embeddings.append(perturbed_emb)
+                 query_embeddings.append(np.array([perturbed_emb], dtype='float32')) # Convert perturbed list to numpy array [embedding]
 
 
-        for i, current_query_embedding in enumerate(query_embeddings):
+        for i, current_query_embedding_np in enumerate(query_embeddings): # current_query_embedding_np is now [embedding] numpy array
             current_set_chunks: List[str] = []
 
             for pdf_path, source_info in self.loaded_sources.items():
@@ -321,7 +329,10 @@ class DocRetriever:
 
                  if source_embedder and source_texts and source_embedder.index is not None and source_embedder.index.ntotal > 0 and k > 0:
                      try:
-                         D, I = source_embedder.search(np.array([current_query_embedding], dtype='float32'), k=k)
+                         # Search the specific source's index using the source_embedder's search method
+                         # This search method expects a numpy array [embedding]
+                         D, I = source_embedder.search(current_query_embedding_np, k=k)
+
                          retrieved_chunks = [source_texts[j] for j in I]
                          current_set_chunks.extend(retrieved_chunks)
 

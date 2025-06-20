@@ -60,7 +60,8 @@ if not LLM_MODELS:
 logger.info(f"Configured LLM base_url: {LLM_BASE_URL}")
 logger.info(f"Available LLM models: {LLM_MODELS}")
 
-EMBEDDING_MODEL = "nomic-embed-text"
+# definging sentence transformer model
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 logger.info(f"Using embedding model: {EMBEDDING_MODEL}")
 
 # --- LLM Client and Model Manager ---

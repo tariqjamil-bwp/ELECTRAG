@@ -8,7 +8,7 @@ import concurrent.futures
 import re
 from tqdm import tqdm # Keep tqdm for console progress
 from datetime import datetime
-import json
+
 # Import components and helpers from doc_processing
 from doc_processing import (
     DocLoader,
@@ -39,7 +39,8 @@ class DocQA:
         self.logger = logging.getLogger('DocQA')
         self.logger.info("Initialized DocQA.")
 
-    def answer(self, question: str, context: List[str]) -> str:
+    # Modified answer to accept history
+    def answer(self, question: str, context: List[str], history: List[Dict]) -> str:
         self.logger.debug(f"Generating answer for question: {question[:100]}... with {len(context)} context chunks.")
         if not context:
             self.logger.warning("No context provided for answering question.")
@@ -47,15 +48,34 @@ class DocQA:
 
         try:
             context_str = '---\n'.join(context)
-            MAX_CONTEXT_TOKENS = 7000
+            MAX_CONTEXT_TOKENS = 7000 # Adjust based on model capacity and other prompt parts
             context_tokens = ENC.encode(context_str)
             if len(context_tokens) > MAX_CONTEXT_TOKENS:
                  self.logger.warning(f"Context token count ({len(context_tokens)}) exceeds MAX_CONTEXT_TOKENS ({MAX_CONTEXT_TOKENS}). Truncating context.")
                  context_str = ENC.decode(context_tokens[:MAX_CONTEXT_TOKENS]) + "\n[... Context truncated ...]"
 
-            prompt = ("You are an expert assistant. Use the following context to answer the question.\n\n"
-                      f"Context:\n{context_str}\n\n"
-                      f"Question: {question}\nAnswer:")
+            # Format history for prompt
+            history_str = ""
+            # We typically want the LLM to see the history in chronological order, ending with the last assistant turn
+            # before the current user question. The history passed here includes the current user message.
+            # Let's format all but the *last* message (the current user question) as history.
+            # The last message (current question) is already in the 'question' variable.
+            # Format history for prompt (excluding the last message which is handled separately)
+            history_for_prompt = history[:-1] # Exclude the last message (current user question)
+            if history_for_prompt:
+                history_str = "Chat History:\n"
+                for turn in history_for_prompt:
+                    # Capitalize role for prompt clarity
+                    history_str += f"{turn['role'].capitalize()}: {turn['content']}\n"
+                history_str += "---\n\n" # Separator
+
+
+            prompt = (
+                "You are an expert assistant. Use the following context and chat history to answer the question.\n\n"
+                f"{history_str}" # Include history
+                f"Context:\n{context_str}\n\n"
+                f"Question: {question}\nAnswer:"
+            )
 
             client = model_manager.get_client()
             model_name = model_manager.get_current_model_name()
@@ -63,7 +83,7 @@ class DocQA:
 
             resp = client.chat.completions.create(
                 model=model_name,
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": prompt}], # Sending as a single user message for simplicity
                 temperature=0.2,
                 max_tokens=500,
             )
@@ -74,7 +94,8 @@ class DocQA:
              self.logger.error(f"Error calling API for answer generation: {type(e).__name__}: {e}", exc_info=True)
              raise # Re-raise to answer_parallel
 
-    def answer_parallel(self, question: str, candidate_contexts: List[List[str]], max_retries_per_set: int = 2) -> List[str]:
+    # Modified answer_parallel to accept history and pass it to answer
+    def answer_parallel(self, question: str, candidate_contexts: List[List[str]], history: List[Dict], max_retries_per_set: int = 2) -> List[str]:
         self.logger.info(f"Generating parallel answers for {len(candidate_contexts)} candidate contexts sets.")
         if not candidate_contexts:
              self.logger.warning("No candidate contexts sets provided for parallel answering.")
@@ -89,14 +110,14 @@ class DocQA:
 
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 for idx, context_set in enumerate(candidate_contexts):
-                    future = executor.submit(self.answer, question, context_set)
+                    # Pass history to the answer function
+                    future = executor.submit(self.answer, question, context_set, history)
                     futures_queue.append((future, idx, 0)) # Store (future, original_index, retry_count)
 
                 # Using tqdm for console progress
                 pbar = tqdm(total=len(candidate_contexts), desc="Generating answers")
                 completed_count = 0
 
-                # Process futures as they complete, handling retries
                 while completed_count < len(candidate_contexts):
                     done_futures = [f for f in futures_queue if f[0].done()]
                     futures_queue = [f for f in futures_queue if not f[0].done()]
@@ -120,9 +141,10 @@ class DocQA:
                             self.logger.error(f"Attempt {retry_count+1} for answer index {original_idx} failed: {type(e).__name__}: {e}", exc_info=True)
                             if retry_count < max_retries_per_set:
                                 self.logger.warning(f"Attempting to cycle model and retry answer index {original_idx}.")
-                                if model_manager.handle_api_error(e): # This cycles the model if possible
+                                if model_manager.handle_api_error(e):
                                     self.logger.warning(f"Retrying answer index {original_idx} with model {model_manager.get_current_model_name()} (Retry {retry_count+1}/{max_retries_per_set}).")
-                                    new_future = executor.submit(self.answer, question, candidate_contexts[original_idx])
+                                    # Pass history again on retry
+                                    new_future = executor.submit(self.answer, question, candidate_contexts[original_idx], history)
                                     futures_queue.append((new_future, original_idx, retry_count + 1)) # Add back to queue
                                 else:
                                     self.logger.critical(f"Model cycling failed for answer index {original_idx}. Giving up after {retry_count+1} attempts.")
@@ -158,7 +180,8 @@ class DocRanker:
         self.logger = logging.getLogger('DocRanker')
         self.logger.info("Initialized DocRanker.")
 
-    def rank(self, question: str, candidate_answers: List[str], candidate_contexts: List[List[str]], max_retries: int = 2) -> tuple[str, int]:
+    # Modified rank to accept history
+    def rank(self, question: str, candidate_answers: List[str], candidate_contexts: List[List[str]], history: List[Dict], max_retries: int = 2) -> tuple[str, int]:
         self.logger.info(f"Ranking {len(candidate_answers)} candidate answers for question: {question[:100]}...")
         if not candidate_answers:
              self.logger.warning("No candidate answers provided for ranking.")
@@ -171,7 +194,6 @@ class DocRanker:
                             if ans and not ans.startswith("Error generating answer:") and not ans.startswith("Internal error generating answer:")]
         if not valid_candidates:
             self.logger.warning("All candidate answers were error messages or empty. Cannot rank valid candidates.")
-            # Return a fallback message using the first candidate answer if available, otherwise a generic message
             return candidate_answers[0] if candidate_answers else "No valid answers to rank.", -1
 
 
@@ -191,9 +213,22 @@ class DocRanker:
 
                 summary = "\n\n---\n\n".join(summary_list)
 
+                # Format history for prompt
+                history_str = ""
+                # Again, format all but the *last* message (the current user question) as history.
+                history_for_prompt = history[:-1]
+                if history_for_prompt:
+                     history_str = "Chat History:\n"
+                     for turn in history_for_prompt:
+                         history_str += f"{turn['role'].capitalize()}: {turn['content']}\n"
+                     history_str += "---\n\n" # Separator
+
+
                 ranking_prompt = (
                     "You are a ranking expert. Below are several candidate answers and snippets of the context used "
-                    "to generate them for the given question. Analyze each candidate answer snippet and its context snippet. "
+                    "to generate them for the given question.\n\n"
+                    f"{history_str}" # Include history
+                    "Analyze each candidate answer snippet and its context snippet. "
                     "Determine which *original candidate answer* (by its number #) is the best "
                     "based on relevance, accuracy, completeness, and clarity. Provide a brief reason for choosing the best answer. "
                     "Finally, state the number of the best original candidate answer and the full text of that answer.\n\n"
@@ -338,7 +373,7 @@ class ManagerRAG:
             pdf_path_abs = os.path.abspath(pdf_path)
             self.logger.info(f"Processing file: {pdf_filename}")
 
-            try: # Try block for processing a single file (cache check, load/process, save)
+            try: # Try block for processing a single file
                 current_hash = calculate_file_hash(pdf_path_abs)
                 self.logger.debug(f"Calculated hash for {pdf_filename}: {current_hash}")
 
@@ -404,7 +439,7 @@ class ManagerRAG:
                         texts_list = self.loader.load_and_split(pdf_path_abs)
                         if not texts_list:
                             self.logger.warning(f"No text chunks extracted from {pdf_filename}. Skipping.")
-                            continue # Skip saving and adding to loaded_sources for this file
+                            continue
 
                         file_embedder = DocEmbedder(model_name=self.embedding_agent_model.model_name, batch_size=self.embedding_agent_model.batch_size)
                         file_embedder.create_new_index()
@@ -449,7 +484,7 @@ class ManagerRAG:
             except Exception as file_loop_e:
                  # Catch any unexpected error during the initial checks or hash calculation for this file
                  self.logger.error(f"Unexpected error during file loop processing for {pdf_filename}: {file_loop_e}", exc_info=True)
-                 continue # Continue outer loop to process next file
+                 continue # Continue outer loop
 
         # tqdm progress bar finishes automatically after the loop
 
@@ -465,11 +500,12 @@ class ManagerRAG:
              self.retriever = None
 
 
-    def query(self, question: str):
+    # Modified query to accept history
+    def query(self, question: str, history: List[Dict]):
         self.logger.info(f"Starting query process for question: {question[:100]}...")
         if self.retriever is None:
              self.logger.error("DocRetriever is not initialized. Document ingestion likely failed or hasn't occurred yet, or no valid PDFs were processed.")
-             return "Error: Document ingestion failed or hasn't occurred yet, or no documents were loaded."
+             return "Error: DocRetriever is not initialized. Documents may not be loaded."
         if not self.loaded_sources:
              self.logger.warning("No loaded sources available to query.")
              return "No relevant information found (no documents loaded)."
@@ -482,7 +518,6 @@ class ManagerRAG:
 
 
         try:
-            # Retrieval doesn't have internal progress by default
             candidates = self.retriever.retrieve_candidates(
                 question, n_candidates=self.n_candidates, k=self.k)
             self.logger.info(f"Retrieval returned {len(candidates)} non-empty candidate sets.")
@@ -491,12 +526,12 @@ class ManagerRAG:
                  self.logger.warning("No candidates retrieved for the query from any source.")
                  return "No relevant information found for the query."
 
-            # answer_parallel uses its own progress bar (tqdm or Chainlit)
-            candidate_answers = self.qa.answer_parallel(question, candidates)
+            # Pass history to answer_parallel
+            candidate_answers = self.qa.answer_parallel(question, candidates, history)
             self.logger.info(f"DocQA returned {len(candidate_answers)} candidate answers.")
 
-            # Ranking might have internal retries
-            final_answer, chosen_idx = self.ranker.rank(question, candidate_answers, candidates)
+            # Pass history to rank
+            final_answer, chosen_idx = self.ranker.rank(question, candidate_answers, candidates, history)
             self.logger.info(f"Ranking completed. Chosen answer index: {chosen_idx}.")
 
             self.logger.info(f"Final answer generated (snippet): {final_answer[:100]}...")
