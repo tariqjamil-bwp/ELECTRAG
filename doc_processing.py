@@ -10,7 +10,7 @@ import os
 from tqdm import tqdm
 from datetime import datetime
 from sentence_transformers import SentenceTransformer # Import SentenceTransformer
-import torch
+#import torch
 DEVICE = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu' # Use GPU if available, otherwise CPU
 # Import utilities from utils.py
 from utils import (
