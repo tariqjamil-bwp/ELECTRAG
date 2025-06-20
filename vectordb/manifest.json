@@ -1,0 +1,20 @@
+{
+    "/home/tjamil/Dev2025/RAG/pdf/Automotive+Electronics+Design+Fundamenta.pdf": {
+        "hash": "cbe72533af75d8be1c771f2059cebabd51faf80d05a523df4497f1536fcdf4ce",
+        "index_path": "vectordb/Automotive_Electronics_Design_Fundamenta_cbe72533.faiss",
+        "texts_path": "vectordb/Automotive_Electronics_Design_Fundamenta_cbe72533.json",
+        "timestamp": "2025-06-20T21:52:16.332988"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d0151.pdf": {
+        "hash": "bfc530a3db2e5f4beb319d98312d9efc3e37d099d290d8bc143281c37dbd4e62",
+        "index_path": "vectordb/lu144506d0151_bfc530a3.faiss",
+        "texts_path": "vectordb/lu144506d0151_bfc530a3.json",
+        "timestamp": "2025-06-20T21:52:28.297407"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu80211cmeg.pdf": {
+        "hash": "2d0ec46e44b1f48a600d2ac8ffdb037ae71b3b0dba74a68d5b228c2f8f90727c",
+        "index_path": "vectordb/lu80211cmeg_2d0ec46e.faiss",
+        "texts_path": "vectordb/lu80211cmeg_2d0ec46e.json",
+        "timestamp": "2025-06-20T21:53:12.960144"
+    }
+}
