@@ -48,7 +48,7 @@ class DocQA:
 
         try:
             context_str = '---\n'.join(context)
-            MAX_CONTEXT_TOKENS = 7000 # Adjust based on model capacity and other prompt parts
+            MAX_CONTEXT_TOKENS = 25000 # Adjust based on model capacity and other prompt parts
             context_tokens = ENC.encode(context_str)
             if len(context_tokens) > MAX_CONTEXT_TOKENS:
                  self.logger.warning(f"Context token count ({len(context_tokens)}) exceeds MAX_CONTEXT_TOKENS ({MAX_CONTEXT_TOKENS}). Truncating context.")

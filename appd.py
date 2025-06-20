@@ -28,7 +28,7 @@ DEFAULT_PDF_FOLDER_LOCAL = "pdf"
 
 # --- Chat Memory Configuration ---
 # Store the last N *turns* (user + assistant)
-MAX_CHAT_TURNS = 5
+MAX_CHAT_TURNS = 3
 # Total number of messages (user + assistant)
 MAX_CHAT_MESSAGES = MAX_CHAT_TURNS * 2
 
