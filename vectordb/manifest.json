@@ -1,0 +1,68 @@
+{
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d0175.pdf": {
+        "hash": "2d0ec46e44b1f48a600d2ac8ffdb037ae71b3b0dba74a68d5b228c2f8f90727c",
+        "index_path": "vectordb/lu144506d0175_2d0ec46e.faiss",
+        "texts_path": "vectordb/lu144506d0175_2d0ec46e.json",
+        "timestamp": "2025-06-20T16:28:56.075117"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d00q9.pdf": {
+        "hash": "d30ca88d261bb6cf1fd9e62c3836720c03019237b5e59319e1d8e57324a12f5c",
+        "index_path": "vectordb/lu144506d00q9_d30ca88d.faiss",
+        "texts_path": "vectordb/lu144506d00q9_d30ca88d.json",
+        "timestamp": "2025-06-20T16:29:00.098670"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d00uh.pdf": {
+        "hash": "d30ca88d261bb6cf1fd9e62c3836720c03019237b5e59319e1d8e57324a12f5c",
+        "index_path": "vectordb/lu144506d00uh_d30ca88d.faiss",
+        "texts_path": "vectordb/lu144506d00uh_d30ca88d.json",
+        "timestamp": "2025-06-20T16:29:03.926642"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d0151.pdf": {
+        "hash": "bfc530a3db2e5f4beb319d98312d9efc3e37d099d290d8bc143281c37dbd4e62",
+        "index_path": "vectordb/lu144506d0151_bfc530a3.faiss",
+        "texts_path": "vectordb/lu144506d0151_bfc530a3.json",
+        "timestamp": "2025-06-20T16:29:27.115140"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu80211cmeg.pdf": {
+        "hash": "2d0ec46e44b1f48a600d2ac8ffdb037ae71b3b0dba74a68d5b228c2f8f90727c",
+        "index_path": "vectordb/lu80211cmeg_2d0ec46e.faiss",
+        "texts_path": "vectordb/lu80211cmeg_2d0ec46e.json",
+        "timestamp": "2025-06-20T16:31:21.325963"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d010t.pdf": {
+        "hash": "7004465a01d7dd203a8896c1fd3f1583a1d25fb215bed709d7519a1f7e54a547",
+        "index_path": "vectordb/lu144506d010t_7004465a.faiss",
+        "texts_path": "vectordb/lu144506d010t_7004465a.json",
+        "timestamp": "2025-06-20T16:31:26.447801"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu80211cmcc.pdf": {
+        "hash": "d30ca88d261bb6cf1fd9e62c3836720c03019237b5e59319e1d8e57324a12f5c",
+        "index_path": "vectordb/lu80211cmcc_d30ca88d.faiss",
+        "texts_path": "vectordb/lu80211cmcc_d30ca88d.json",
+        "timestamp": "2025-06-20T16:31:30.438620"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d012x.pdf": {
+        "hash": "2d0ec46e44b1f48a600d2ac8ffdb037ae71b3b0dba74a68d5b228c2f8f90727c",
+        "index_path": "vectordb/lu144506d012x_2d0ec46e.faiss",
+        "texts_path": "vectordb/lu144506d012x_2d0ec46e.json",
+        "timestamp": "2025-06-20T16:33:25.864684"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d00sd.pdf": {
+        "hash": "d30ca88d261bb6cf1fd9e62c3836720c03019237b5e59319e1d8e57324a12f5c",
+        "index_path": "vectordb/lu144506d00sd_d30ca88d.faiss",
+        "texts_path": "vectordb/lu144506d00sd_d30ca88d.json",
+        "timestamp": "2025-06-20T16:33:29.854458"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d00wl.pdf": {
+        "hash": "d30ca88d261bb6cf1fd9e62c3836720c03019237b5e59319e1d8e57324a12f5c",
+        "index_path": "vectordb/lu144506d00wl_d30ca88d.faiss",
+        "texts_path": "vectordb/lu144506d00wl_d30ca88d.json",
+        "timestamp": "2025-06-20T16:33:33.739955"
+    },
+    "/home/tjamil/Dev2025/RAG/pdf/lu144506d00yp.pdf": {
+        "hash": "d30ca88d261bb6cf1fd9e62c3836720c03019237b5e59319e1d8e57324a12f5c",
+        "index_path": "vectordb/lu144506d00yp_d30ca88d.faiss",
+        "texts_path": "vectordb/lu144506d00yp_d30ca88d.json",
+        "timestamp": "2025-06-20T16:33:37.670727"
+    }
+}
