@@ -10,7 +10,8 @@ import os
 from tqdm import tqdm
 from datetime import datetime
 from sentence_transformers import SentenceTransformer # Import SentenceTransformer
-
+import torch
+DEVICE = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu' # Use GPU if available, otherwise CPU
 # Import utilities from utils.py
 from utils import (
     ENC,
@@ -81,7 +82,7 @@ class DocLoader:
 
 # --- Document Embedding ---
 class DocEmbedder:
-    def __init__(self, model_name: str = EMBEDDING_MODEL, batch_size: int = 50):
+    def __init__(self, model_name: str = EMBEDDING_MODEL, batch_size: int = 8):
         self.logger = logging.getLogger('DocEmbedder')
         self.model_name = model_name
         self.batch_size = batch_size
@@ -92,7 +93,7 @@ class DocEmbedder:
         try:
             self.logger.info(f"Loading SentenceTransformer model '{self.model_name}'...")
             # Initialize the SentenceTransformer model
-            self.embedder = SentenceTransformer(self.model_name)
+            self.embedder = SentenceTransformer(self.model_name, device = DEVICE, model_kwargs={"torch_dtype": "float16"})
             self.logger.info(f"SentenceTransformer model '{self.model_name}' loaded.")
 
             # Get the dimension from the loaded model
@@ -124,6 +125,7 @@ class DocEmbedder:
                 batch_size=self.batch_size,
                 show_progress_bar=False, # Control progress bar externally with tqdm or cl.Progressbar
                 convert_to_numpy=True # Ensure numpy array output
+
             )
 
             if embeddings is None or not isinstance(embeddings, np.ndarray) or embeddings.shape[0] != len(texts):
